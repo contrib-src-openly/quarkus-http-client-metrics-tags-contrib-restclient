@@ -1,9 +1,6 @@
 package io.quarkus.micrometer.runtime.binder.vertx;
 
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Deque;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.TimeUnit;
@@ -18,10 +15,9 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Tag;
 import io.micrometer.core.instrument.Tags;
 import io.micrometer.core.instrument.Timer;
-import io.quarkus.arc.Arc;
-import io.quarkus.arc.ArcContainer;
 import io.quarkus.micrometer.runtime.HttpClientMetricsTagsContributor;
 import io.quarkus.micrometer.runtime.binder.HttpBinderConfiguration;
+import io.quarkus.micrometer.runtime.binder.HttpClientMetricsTagsContributors;
 import io.quarkus.micrometer.runtime.binder.HttpCommonTags;
 import io.quarkus.micrometer.runtime.binder.RequestMetricInfo;
 import io.quarkus.micrometer.runtime.meters.Gauges;
@@ -41,7 +37,7 @@ class VertxHttpClientMetrics extends VertxTcpClientMetrics
     private final Meter.MeterProvider<Timer> responseTimes;
     private final boolean restClient;
 
-    private final List<HttpClientMetricsTagsContributor> httpClientMetricsTagsContributors;
+    private final HttpClientMetricsTagsContributors httpClientMetricsTagsContributors;
 
     VertxHttpClientMetrics(MeterRegistry registry, String prefix, Tags tags, HttpBinderConfiguration httpBinderConfiguration,
             boolean restClient, Gauges<LongAdder> gauges) {
@@ -54,30 +50,11 @@ class VertxHttpClientMetrics extends VertxTcpClientMetrics
                 .tags(tags)
                 .register(registry);
 
-        httpClientMetricsTagsContributors = resolveHttpClientMetricsTagsContributors();
+        httpClientMetricsTagsContributors = new HttpClientMetricsTagsContributors();
 
         responseTimes = Timer.builder(config.getHttpClientRequestsName())
                 .description("Response times")
                 .withRegistry(registry);
-    }
-
-    private List<HttpClientMetricsTagsContributor> resolveHttpClientMetricsTagsContributors() {
-        final List<HttpClientMetricsTagsContributor> httpClientMetricsTagsContributors;
-        ArcContainer arcContainer = Arc.container();
-        if (arcContainer == null) {
-            httpClientMetricsTagsContributors = Collections.emptyList();
-        } else {
-            var handles = arcContainer.listAll(HttpClientMetricsTagsContributor.class);
-            if (handles.isEmpty()) {
-                httpClientMetricsTagsContributors = Collections.emptyList();
-            } else {
-                httpClientMetricsTagsContributors = new ArrayList<>(handles.size());
-                for (var handle : handles) {
-                    httpClientMetricsTagsContributors.add(handle.get());
-                }
-            }
-        }
-        return httpClientMetricsTagsContributors;
     }
 
     @Override
@@ -171,17 +148,7 @@ class VertxHttpClientMetrics extends VertxTcpClientMetrics
                 Tags list = tracker.tags
                         .and(HttpCommonTags.status(tracker.response.statusCode()))
                         .and(HttpCommonTags.outcome(tracker.response.statusCode()));
-                if (!httpClientMetricsTagsContributors.isEmpty()) {
-                    HttpClientMetricsTagsContributor.Context context = new DefaultContext(tracker.request, tracker.response);
-                    for (int i = 0; i < httpClientMetricsTagsContributors.size(); i++) {
-                        try {
-                            Tags additionalTags = httpClientMetricsTagsContributors.get(i).contribute(context);
-                            list = list.and(additionalTags);
-                        } catch (Exception e) {
-                            log.debug("Unable to obtain additional tags", e);
-                        }
-                    }
-                }
+                list = httpClientMetricsTagsContributors.apply(list, new DefaultContext(tracker.request, tracker.response));
 
                 responseTimes
                         .withTags(list)

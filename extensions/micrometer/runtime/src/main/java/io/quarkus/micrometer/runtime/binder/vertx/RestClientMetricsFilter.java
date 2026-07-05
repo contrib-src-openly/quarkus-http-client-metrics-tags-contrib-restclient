@@ -17,8 +17,10 @@ import io.micrometer.core.instrument.Tags;
 import io.micrometer.core.instrument.Timer;
 import io.quarkus.arc.Unremovable;
 import io.quarkus.micrometer.runtime.binder.HttpBinderConfiguration;
+import io.quarkus.micrometer.runtime.binder.HttpClientMetricsTagsContributors;
 import io.quarkus.micrometer.runtime.binder.HttpCommonTags;
 import io.quarkus.micrometer.runtime.binder.RequestMetricInfo;
+import io.quarkus.micrometer.runtime.binder.RestClientMetricsTagsContext;
 import io.vertx.core.http.HttpClientOptions;
 
 /**
@@ -37,9 +39,12 @@ public class RestClientMetricsFilter implements ResteasyReactiveClientRequestFil
 
     private final Meter.MeterProvider<Timer> timer;
 
+    private final HttpClientMetricsTagsContributors httpClientMetricsTagsContributors;
+
     @Inject
     public RestClientMetricsFilter(final HttpBinderConfiguration httpMetricsConfig) {
         this.httpMetricsConfig = httpMetricsConfig;
+        this.httpClientMetricsTagsContributors = new HttpClientMetricsTagsContributors();
 
         timer = Timer.builder(httpMetricsConfig.getHttpClientRequestsName())
                 .withRegistry(registry);
@@ -75,15 +80,19 @@ public class RestClientMetricsFilter implements ResteasyReactiveClientRequestFil
                 Timer.Sample sample = requestMetric.getSample();
                 int statusCode = responseContext.getStatus();
 
+                Tags tags = Tags.of(
+                        address(requestContext),
+                        HttpCommonTags.method(requestContext.getMethod()),
+                        HttpCommonTags.uri(requestPath, requestContext.getUri().getPath(), statusCode,
+                                httpMetricsConfig.isClientSuppress4xxErrors()),
+                        HttpCommonTags.outcome(statusCode),
+                        HttpCommonTags.status(statusCode),
+                        clientName(requestContext));
+                tags = httpClientMetricsTagsContributors.apply(tags,
+                        new RestClientMetricsTagsContext(requestContext, responseContext));
+
                 sample.stop(timer
-                        .withTags(Tags.of(
-                                address(requestContext),
-                                HttpCommonTags.method(requestContext.getMethod()),
-                                HttpCommonTags.uri(requestPath, requestContext.getUri().getPath(), statusCode,
-                                        httpMetricsConfig.isClientSuppress4xxErrors()),
-                                HttpCommonTags.outcome(statusCode),
-                                HttpCommonTags.status(statusCode),
-                                clientName(requestContext))));
+                        .withTags(tags));
             }
         }
     }

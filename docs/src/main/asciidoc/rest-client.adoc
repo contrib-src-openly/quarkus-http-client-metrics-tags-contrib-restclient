@@ -2095,7 +2095,9 @@ For declarative clients using `@RegisterRestClient`, simply providing a CDI bean
 
 == Metrics
 
-All declarative REST Client instances produce metrics using the `http.clients` prefix. Furthermore, the metrics contain a tag named `clientName` which corresponds to the config key of the client (as specified by the `configKey` property of the `@RegisterRestClient` annotation).
+All declarative REST Client instances produce request metrics using the `http.client.requests` timer.
+The metrics contain a tag named `clientName` which corresponds to the config key of the client, as specified by the `configKey` property of the `@RegisterRestClient` annotation.
+When the xref:telemetry-micrometer.adoc[`quarkus-micrometer`] extension is used, CDI beans that implement xref:telemetry-micrometer.adoc#http-client-metrics-tags-contributor[`HttpClientMetricsTagsContributor`] can add custom tags to these request metrics.
 
 To enable metrics for programmatically created REST Clients, the following snippet can be used:
 

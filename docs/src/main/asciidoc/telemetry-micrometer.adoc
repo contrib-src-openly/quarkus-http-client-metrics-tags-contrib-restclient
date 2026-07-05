@@ -796,9 +796,34 @@ By providing CDI beans that implement `io.quarkus.micrometer.runtime.HttpServerM
 
 CAUTION: When creating tags using this interface, it's important to limit the cardinality of the values, otherwise there is a risk of severely degrading the metrics system's capacity.
 
+[[http-client-metrics-tags-contributor]]
 === Use `HttpClientMetricsTagsContributor` for client HTTP requests
 
-By providing CDI beans that implement `io.quarkus.micrometer.runtime.HttpClientMetricsTagsContributor`, user code can contribute arbitrary tags based on the details of HTTP request
+By providing CDI beans that implement `io.quarkus.micrometer.runtime.HttpClientMetricsTagsContributor`, user code can contribute arbitrary tags based on the details of HTTP client requests and responses.
+Contributed tags are added to Vert.x HTTP client metrics and to REST Client request metrics, including the `http.client.requests` timer emitted for declarative REST Client calls.
+
+[source,java]
+----
+import jakarta.inject.Singleton;
+
+import io.micrometer.core.instrument.Tags;
+import io.quarkus.micrometer.runtime.HttpClientMetricsTagsContributor;
+
+@Singleton
+public class ClientHeaderTag implements HttpClientMetricsTagsContributor {
+    @Override
+    public Tags contribute(Context context) {
+        String headerValue = context.request().headers().get("X-Client-Group");
+        if (headerValue == null || headerValue.isEmpty()) {
+            return Tags.of("client.group", "unknown");
+        }
+        return Tags.of("client.group", headerValue);
+    }
+}
+----
+
+CAUTION: When creating tags using this interface, it's important to limit the cardinality of the values, otherwise there is a risk of severely degrading the metrics system's capacity.
+Do not use values that can be unbounded, such as end-user identifiers, full URLs, or high-cardinality request header values.
 
 === Use `MeterRegistryCustomizer` for arbitrary customizations to meter registries
 

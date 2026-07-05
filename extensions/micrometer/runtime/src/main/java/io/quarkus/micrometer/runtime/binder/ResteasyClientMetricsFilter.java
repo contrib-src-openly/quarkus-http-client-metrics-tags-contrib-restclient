@@ -31,6 +31,8 @@ public class ResteasyClientMetricsFilter implements ClientRequestFilter, ClientR
 
     private final Meter.MeterProvider<Timer> timer;
 
+    private final HttpClientMetricsTagsContributors httpClientMetricsTagsContributors;
+
     // RESTEasy requires no-arg constructor for CDI injection: https://issues.redhat.com/browse/RESTEASY-1538
     // In the classic Rest Client this is the constructor called whereas in the Reactive one,
     // the constructor using HttpBinderConfiguration is called.
@@ -41,6 +43,7 @@ public class ResteasyClientMetricsFilter implements ClientRequestFilter, ClientR
     @Inject
     public ResteasyClientMetricsFilter(final HttpBinderConfiguration httpMetricsConfig) {
         this.httpMetricsConfig = httpMetricsConfig;
+        this.httpClientMetricsTagsContributors = new HttpClientMetricsTagsContributors();
 
         timer = Timer.builder(httpMetricsConfig.getHttpClientRequestsName())
                 .withRegistry(registry);
@@ -77,15 +80,19 @@ public class ResteasyClientMetricsFilter implements ClientRequestFilter, ClientR
                 Timer.Sample sample = requestMetric.getSample();
                 int statusCode = responseContext.getStatus();
 
+                Tags tags = Tags.of(
+                        address(requestContext),
+                        HttpCommonTags.method(requestContext.getMethod()),
+                        HttpCommonTags.uri(requestPath, requestContext.getUri().getPath(), statusCode,
+                                httpMetricsConfig.isClientSuppress4xxErrors()),
+                        HttpCommonTags.outcome(statusCode),
+                        HttpCommonTags.status(statusCode),
+                        clientName(requestContext));
+                tags = httpClientMetricsTagsContributors.apply(tags,
+                        new RestClientMetricsTagsContext(requestContext, responseContext));
+
                 sample.stop(timer
-                        .withTags(Tags.of(
-                                address(requestContext),
-                                HttpCommonTags.method(requestContext.getMethod()),
-                                HttpCommonTags.uri(requestPath, requestContext.getUri().getPath(), statusCode,
-                                        httpMetricsConfig.isClientSuppress4xxErrors()),
-                                HttpCommonTags.outcome(statusCode),
-                                HttpCommonTags.status(statusCode),
-                                clientName(requestContext))));
+                        .withTags(tags));
             }
         }
     }
